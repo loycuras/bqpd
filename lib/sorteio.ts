@@ -24,6 +24,7 @@ export type QuestaoSorteada = {
   descritor: string;
   descritor_desc: string;
   texto_base: string | null;
+  fonte_texto_base: string | null;
   enunciado: string;
   alternativas: string[]; // já embaralhadas
   gabaritoIndex: number; // posição correta após o embaralhamento
@@ -121,6 +122,7 @@ export function prepararSimulado(questoes: Questao[]): QuestaoSorteada[] {
       descritor: q.descritor,
       descritor_desc: q.descritor_desc,
       texto_base: q.texto_base,
+      fonte_texto_base: q.fonte_texto_base,
       enunciado: q.enunciado,
       alternativas: novas,
       gabaritoIndex: novas.indexOf(correta),
