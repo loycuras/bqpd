@@ -5,6 +5,7 @@ export default function Home() {
          <p>Banco de simulados por descritor — em construção 🚧</p>
          <p>Em breve. Dezenas de questões por descritor</p>
          <p>Gere o seu próprio PDF de questões</p>
+         <p>Escolha os descritores que quer usar</p>
        </main>
      );
    }
