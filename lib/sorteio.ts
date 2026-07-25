@@ -1,7 +1,7 @@
 // lib/sorteio.ts
 // Motor de seleção e embaralhamento das questões.
-// Lê o banco (questoes.json) e monta o simulado, distribuindo o gabarito
-// de forma equilibrada para nunca cair sempre na mesma letra.
+// Lê o banco (questoes.json), filtra por etapa/nível/descritores e monta o
+// simulado distribuindo o gabarito de forma equilibrada.
 
 import banco from "@/data/questoes.json";
 
@@ -26,12 +26,14 @@ export type QuestaoSorteada = {
   texto_base: string | null;
   enunciado: string;
   alternativas: string[]; // já embaralhadas
-  gabaritoIndex: number; // posição correta APÓS o embaralhamento
+  gabaritoIndex: number; // posição correta após o embaralhamento
 };
 
 export const QUESTOES = banco as Questao[];
 
-// Embaralhamento Fisher-Yates (imparcial).
+// Ordem pedagógica dos níveis (do mais básico ao mais avançado).
+const ORDEM_NIVEL = ["Elementar I", "Elementar II", "Básico", "Desejável"];
+
 function embaralhar<T>(arr: T[]): T[] {
   const a = [...arr];
   for (let i = a.length - 1; i > 0; i--) {
@@ -41,45 +43,50 @@ function embaralhar<T>(arr: T[]): T[] {
   return a;
 }
 
-// Etapas que realmente têm questões (etapa vazia não aparece pro professor).
 export function etapasDisponiveis(): string[] {
   return [...new Set(QUESTOES.map((q) => q.etapa))];
 }
 
-// Descritores de uma etapa, com a quantidade de questões de cada um.
+// Níveis que existem para a etapa (nem todo descritor tem todos os níveis).
+export function niveisDaEtapa(etapa: string): string[] {
+  const presentes = new Set(
+    QUESTOES.filter((q) => q.etapa === etapa).map((q) => q.nivel)
+  );
+  return ORDEM_NIVEL.filter((n) => presentes.has(n));
+}
+
+// Descritores da etapa (sem expor a quantidade de questões do banco).
 export function descritoresDaEtapa(
   etapa: string
-): { codigo: string; descricao: string; total: number }[] {
-  const mapa = new Map<string, { descricao: string; total: number }>();
+): { codigo: string; descricao: string }[] {
+  const mapa = new Map<string, string>();
   for (const q of QUESTOES) {
-    if (q.etapa !== etapa) continue;
-    const atual = mapa.get(q.descritor);
-    if (atual) atual.total++;
-    else mapa.set(q.descritor, { descricao: q.descritor_desc, total: 1 });
+    if (q.etapa === etapa) mapa.set(q.descritor, q.descritor_desc);
   }
   return [...mapa.entries()]
-    .map(([codigo, v]) => ({ codigo, descricao: v.descricao, total: v.total }))
+    .map(([codigo, descricao]) => ({ codigo, descricao }))
     .sort((a, b) => a.codigo.localeCompare(b.codigo));
 }
 
-// Seleciona as questões conforme o modo.
-// - "variado": sorteia de qualquer descritor da etapa.
-// - "escolhido": distribui entre os descritores escolhidos (um de cada, girando).
+// Seleciona as questões conforme etapa, nível e modo.
+// niveis vazio = todos os níveis. Aplica-se aos dois modos.
 export function selecionarQuestoes(
   etapa: string,
   modo: "variado" | "escolhido",
   descritores: string[],
+  niveis: string[],
   qtd: number
 ): Questao[] {
-  const daEtapa = QUESTOES.filter((q) => q.etapa === etapa);
+  let base = QUESTOES.filter((q) => q.etapa === etapa);
+  if (niveis.length > 0) base = base.filter((q) => niveis.includes(q.nivel));
 
   if (modo === "variado") {
-    return embaralhar(daEtapa).slice(0, qtd);
+    return embaralhar(base).slice(0, qtd);
   }
 
-  // modo "escolhido": agrupa por descritor e vai pegando um de cada, em rodízio.
+  // modo "escolhido": rodízio entre os descritores escolhidos.
   const grupos = descritores.map((d) =>
-    embaralhar(daEtapa.filter((q) => q.descritor === d))
+    embaralhar(base.filter((q) => q.descritor === d))
   );
   const escolhidas: Questao[] = [];
   let i = 0;
@@ -88,20 +95,19 @@ export function selecionarQuestoes(
     const q = grupo.shift();
     if (q) escolhidas.push(q);
     i++;
-    // se todos os grupos esvaziaram antes de atingir qtd, para.
-    if (grupos.every((g) => g.length === 0) && escolhidas.length < qtd) break;
+    if (grupos.every((g) => g.length === 0)) break;
   }
   return escolhidas;
 }
 
-// Gera uma sequência de posições-alvo (0..4) equilibrada para o gabarito.
+// Gera posições-alvo (0..4) equilibradas para o gabarito.
 function alvosEquilibrados(n: number): number[] {
   const alvos: number[] = [];
   while (alvos.length < n) alvos.push(...embaralhar([0, 1, 2, 3, 4]));
   return embaralhar(alvos.slice(0, n));
 }
 
-// Embaralha as alternativas de cada questão colocando a correta na posição-alvo.
+// Embaralha as alternativas colocando a correta na posição-alvo.
 export function prepararSimulado(questoes: Questao[]): QuestaoSorteada[] {
   const alvos = alvosEquilibrados(questoes.length);
   return questoes.map((q, i) => {

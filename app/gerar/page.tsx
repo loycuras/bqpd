@@ -1,39 +1,52 @@
+// app/gerar/page.tsx
 "use client";
 
 import { useMemo, useState } from "react";
 import {
   etapasDisponiveis,
+  niveisDaEtapa,
   descritoresDaEtapa,
   selecionarQuestoes,
   prepararSimulado,
   type QuestaoSorteada,
 } from "@/lib/sorteio";
-import { gerarPDF } from "@/lib/pdf";
+import { gerarPDF, type Cabecalho } from "@/lib/pdf";
+
+const rotulo =
+  "mb-2 block text-xs font-semibold uppercase tracking-wide text-slate-500";
+const chipBase = "rounded-lg border px-4 py-2 text-sm font-semibold";
+const chipOn = "border-indigo-600 bg-indigo-50 text-indigo-700";
+const chipOff = "border-slate-200 text-slate-700 hover:border-slate-300";
+const inputCls =
+  "w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400";
 
 export default function GerarPage() {
   const etapas = etapasDisponiveis();
   const [etapa, setEtapa] = useState(etapas[0]);
+  const [niveis, setNiveis] = useState<string[]>([]); // vazio = todos
   const [modo, setModo] = useState<"escolhido" | "variado">("escolhido");
   const [selecionados, setSelecionados] = useState<string[]>([]);
   const [qtd, setQtd] = useState(10);
-  const [escola, setEscola] = useState("");
-  const [turma, setTurma] = useState("");
+  const [formato, setFormato] = useState<"prosa" | "colunas">("colunas");
   const [preview, setPreview] = useState<QuestaoSorteada[] | null>(null);
 
+  const [cab, setCab] = useState<Cabecalho>({
+    disciplina: true,
+    escola: { on: true, valor: "" },
+    turma: { on: true, valor: "" },
+    aluno: { on: true, valor: "" },
+    data: { on: true, valor: "" },
+  });
+
+  const niveisEtapa = useMemo(() => niveisDaEtapa(etapa), [etapa]);
   const descritores = useMemo(() => descritoresDaEtapa(etapa), [etapa]);
 
-  function alternarDescritor(cod: string) {
-    setSelecionados((atual) =>
-      atual.includes(cod)
-        ? atual.filter((d) => d !== cod)
-        : atual.length < 10
-        ? [...atual, cod]
-        : atual
-    );
-    setPreview(null);
+  function alternar<T>(lista: T[], item: T): T[] {
+    return lista.includes(item)
+      ? lista.filter((x) => x !== item)
+      : [...lista, item];
   }
 
-  // Regra de validação: bloqueia quando há mais descritores do que questões.
   const erro =
     modo === "escolhido" && selecionados.length === 0
       ? "Selecione ao menos um descritor."
@@ -43,87 +56,153 @@ export default function GerarPage() {
 
   function gerar() {
     if (erro) return;
-    const questoes = selecionarQuestoes(etapa, modo, selecionados, qtd);
-    setPreview(prepararSimulado(questoes));
+    const q = selecionarQuestoes(etapa, modo, selecionados, niveis, qtd);
+    setPreview(prepararSimulado(q));
   }
 
   function baixar() {
     if (!preview) return;
-    gerarPDF({ etapa, escola, turma, questoes: preview });
+    gerarPDF({ etapa, formato, cabecalho: cab, questoes: preview });
+  }
+
+  // helper para um item do cabeçalho com campo de texto
+  function CampoCab({
+    chave,
+    nome,
+    placeholder,
+  }: {
+    chave: "escola" | "turma" | "aluno" | "data";
+    nome: string;
+    placeholder: string;
+  }) {
+    const c = cab[chave];
+    return (
+      <div className="flex items-center gap-3">
+        <button
+          onClick={() =>
+            setCab({ ...cab, [chave]: { ...c, on: !c.on } })
+          }
+          className={`grid h-5 w-5 place-items-center rounded border ${
+            c.on
+              ? "border-indigo-600 bg-indigo-600 text-white"
+              : "border-slate-300"
+          }`}
+        >
+          {c.on ? "✓" : ""}
+        </button>
+        <span className="w-20 text-sm text-slate-700">{nome}</span>
+        <input
+          value={c.valor}
+          disabled={!c.on}
+          onChange={(e) =>
+            setCab({ ...cab, [chave]: { ...c, valor: e.target.value } })
+          }
+          placeholder={placeholder}
+          className={`${inputCls} flex-1 disabled:bg-slate-50 disabled:text-slate-400`}
+        />
+      </div>
+    );
   }
 
   return (
-    <main className="mx-auto max-w-5xl px-5 py-10">
-      <h1 className="text-2xl font-bold text-slate-800">Gerar simulado</h1>
+    <main className="mx-auto max-w-5xl px-5 py-10 text-slate-900">
+      <h1 className="text-2xl font-bold">Gerar simulado</h1>
       <p className="mt-1 text-slate-500">
-        Escolha a etapa, os descritores e o número de questões. O gabarito é
-        embaralhado automaticamente.
+        Língua Portuguesa · escolha a etapa, os descritores e o formato. O
+        gabarito é embaralhado automaticamente.
       </p>
 
       <div className="mt-8 grid gap-6 md:grid-cols-2">
         {/* ---------- CONFIGURAÇÃO ---------- */}
-        <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+        <section className="space-y-6 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
           {/* Etapa */}
-          <label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-slate-500">
-            Etapa
-          </label>
-          <div className="mb-6 flex flex-wrap gap-2">
-            {etapas.map((e) => (
-              <button
-                key={e}
-                onClick={() => {
-                  setEtapa(e);
-                  setSelecionados([]);
-                  setPreview(null);
-                }}
-                className={`rounded-lg border px-4 py-2 text-sm font-semibold ${
-                  etapa === e
-                    ? "border-indigo-600 bg-indigo-50 text-indigo-700"
-                    : "border-slate-200 text-slate-700 hover:border-slate-300"
-                }`}
-              >
-                {e}
-              </button>
-            ))}
+          <div>
+            <label className={rotulo}>Etapa</label>
+            <div className="flex flex-wrap gap-2">
+              {etapas.map((e) => (
+                <button
+                  key={e}
+                  onClick={() => {
+                    setEtapa(e);
+                    setSelecionados([]);
+                    setNiveis([]);
+                    setPreview(null);
+                  }}
+                  className={`${chipBase} ${etapa === e ? chipOn : chipOff}`}
+                >
+                  {e}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Nível */}
+          <div>
+            <label className={rotulo}>
+              Nível <span className="normal-case text-slate-400">(vazio = todos)</span>
+            </label>
+            <div className="flex flex-wrap gap-2">
+              {niveisEtapa.map((n) => (
+                <button
+                  key={n}
+                  onClick={() => {
+                    setNiveis(alternar(niveis, n));
+                    setPreview(null);
+                  }}
+                  className={`${chipBase} ${
+                    niveis.includes(n) ? chipOn : chipOff
+                  }`}
+                >
+                  {n}
+                </button>
+              ))}
+            </div>
           </div>
 
           {/* Modo */}
-          <label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-slate-500">
-            Modo
-          </label>
-          <div className="mb-6 inline-flex gap-1 rounded-xl border border-slate-200 bg-slate-50 p-1">
-            {(["escolhido", "variado"] as const).map((m) => (
-              <button
-                key={m}
-                onClick={() => {
-                  setModo(m);
-                  setPreview(null);
-                }}
-                className={`rounded-lg px-4 py-2 text-sm font-semibold ${
-                  modo === m
-                    ? "bg-white text-slate-800 shadow-sm"
-                    : "text-slate-500"
-                }`}
-              >
-                {m === "escolhido" ? "Escolher descritores" : "Simulado variado"}
-              </button>
-            ))}
+          <div>
+            <label className={rotulo}>Como montar</label>
+            <div className="inline-flex gap-1 rounded-xl border border-slate-200 bg-slate-50 p-1">
+              {(
+                [
+                  ["escolhido", "Escolher descritores"],
+                  ["variado", "Simulado aleatório"],
+                ] as const
+              ).map(([m, texto]) => (
+                <button
+                  key={m}
+                  onClick={() => {
+                    setModo(m);
+                    setPreview(null);
+                  }}
+                  className={`rounded-lg px-4 py-2 text-sm font-semibold ${
+                    modo === m ? "bg-white text-slate-800 shadow-sm" : "text-slate-500"
+                  }`}
+                >
+                  {texto}
+                </button>
+              ))}
+            </div>
           </div>
 
-          {/* Descritores (só no modo escolhido) */}
+          {/* Descritores (sem contagem) */}
           {modo === "escolhido" && (
-            <>
-              <label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-slate-500">
+            <div>
+              <label className={rotulo}>
                 Descritores ({selecionados.length}/10)
               </label>
-              <div className="mb-6 space-y-2">
+              <div className="space-y-2">
                 {descritores.map((d) => {
                   const ativo = selecionados.includes(d.codigo);
                   return (
                     <button
                       key={d.codigo}
-                      onClick={() => alternarDescritor(d.codigo)}
-                      className={`flex w-full items-start gap-3 rounded-xl border p-3 text-left ${
+                      onClick={() => {
+                        if (!ativo && selecionados.length >= 10) return;
+                        setSelecionados(alternar(selecionados, d.codigo));
+                        setPreview(null);
+                      }}
+                      className={`flex w-full items-center gap-3 rounded-xl border p-3 text-left ${
                         ativo
                           ? "border-indigo-600 ring-2 ring-indigo-100"
                           : "border-slate-200 hover:border-slate-300"
@@ -132,72 +211,85 @@ export default function GerarPage() {
                       <span className="rounded-md bg-indigo-50 px-2 py-1 font-mono text-sm font-bold text-indigo-700">
                         {d.codigo}
                       </span>
-                      <span className="flex-1">
-                        <span className="block text-sm font-medium text-slate-800">
-                          {d.descricao}
-                        </span>
-                        <span className="text-xs text-slate-400">
-                          {d.total} questões
-                        </span>
+                      <span className="text-sm font-medium text-slate-800">
+                        {d.descricao}
                       </span>
                     </button>
                   );
                 })}
               </div>
-            </>
+            </div>
           )}
 
-          {/* Nº de questões */}
-          <label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-slate-500">
-            Nº de questões
-          </label>
-          <div className="mb-6 flex gap-2">
-            {[3, 5, 10].map((n) => (
-              <button
-                key={n}
-                onClick={() => {
-                  setQtd(n);
-                  setPreview(null);
-                }}
-                className={`rounded-lg border px-5 py-2 text-sm font-semibold ${
-                  qtd === n
-                    ? "border-indigo-600 bg-indigo-50 text-indigo-700"
-                    : "border-slate-200 text-slate-700 hover:border-slate-300"
-                }`}
-              >
-                {n}
-              </button>
-            ))}
-          </div>
-
-          {/* Escola / Turma */}
-          <div className="mb-6 grid grid-cols-2 gap-3">
+          {/* Nº de questões + Formato */}
+          <div className="flex flex-wrap gap-x-10 gap-y-6">
             <div>
-              <label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-slate-500">
-                Escola
-              </label>
-              <input
-                value={escola}
-                onChange={(e) => setEscola(e.target.value)}
-                placeholder="Nome da escola"
-                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
-              />
+              <label className={rotulo}>Nº de questões</label>
+              <div className="flex gap-2">
+                {[3, 5, 10].map((n) => (
+                  <button
+                    key={n}
+                    onClick={() => {
+                      setQtd(n);
+                      setPreview(null);
+                    }}
+                    className={`${chipBase} ${qtd === n ? chipOn : chipOff}`}
+                  >
+                    {n}
+                  </button>
+                ))}
+              </div>
             </div>
             <div>
-              <label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-slate-500">
-                Turma
-              </label>
-              <input
-                value={turma}
-                onChange={(e) => setTurma(e.target.value)}
-                placeholder="Ex.: 3º A"
-                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
-              />
+              <label className={rotulo}>Formato de impressão</label>
+              <div className="flex gap-2">
+                {(
+                  [
+                    ["colunas", "2 colunas"],
+                    ["prosa", "Prosa"],
+                  ] as const
+                ).map(([f, texto]) => (
+                  <button
+                    key={f}
+                    onClick={() => setFormato(f)}
+                    className={`${chipBase} ${formato === f ? chipOn : chipOff}`}
+                  >
+                    {texto}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Cabeçalho configurável */}
+          <div>
+            <label className={rotulo}>Cabeçalho do PDF</label>
+            <div className="space-y-3 rounded-xl border border-slate-200 p-3">
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() =>
+                    setCab({ ...cab, disciplina: !cab.disciplina })
+                  }
+                  className={`grid h-5 w-5 place-items-center rounded border ${
+                    cab.disciplina
+                      ? "border-indigo-600 bg-indigo-600 text-white"
+                      : "border-slate-300"
+                  }`}
+                >
+                  {cab.disciplina ? "✓" : ""}
+                </button>
+                <span className="w-20 text-sm text-slate-700">Disciplina</span>
+                <span className="text-sm text-slate-400">Língua Portuguesa</span>
+              </div>
+              <CampoCab chave="escola" nome="Escola" placeholder="Nome da escola (ou deixe em branco)" />
+              <CampoCab chave="turma" nome="Turma" placeholder="Ex.: 3º A (ou deixe em branco)" />
+              <CampoCab chave="aluno" nome="Aluno" placeholder="Deixe em branco para o aluno preencher" />
+              <CampoCab chave="data" nome="Data" placeholder="Deixe em branco para linha ___/___/____" />
             </div>
           </div>
 
           {erro && (
-            <p className="mb-4 rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-800">
+            <p className="rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-800">
               {erro}
             </p>
           )}
@@ -228,11 +320,11 @@ export default function GerarPage() {
             </div>
           ) : (
             <>
-              <div className="max-h-[420px] space-y-5 overflow-y-auto pr-2">
+              <div className="max-h-[460px] space-y-5 overflow-y-auto pr-2">
                 {preview.map((q, i) => (
                   <div key={i} className="border-b border-slate-100 pb-4">
                     {q.texto_base && (
-                      <p className="mb-2 text-xs italic text-slate-400 line-clamp-3">
+                      <p className="mb-2 text-xs italic text-slate-400 line-clamp-4">
                         {q.texto_base}
                       </p>
                     )}
