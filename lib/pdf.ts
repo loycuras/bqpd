@@ -1,15 +1,14 @@
 // lib/pdf.ts
-// Gera o PDF do simulado no navegador.
-// Recursos: marca d'água atrás do texto, texto JUSTIFICADO de verdade,
-// texto-base agrupado à questão (barra lateral) com a fonte recuada à direita,
-// layout em 1 ou 2 colunas, cabeçalho configurável e número de série.
+// Gera o PDF do simulado no navegador — layout limpo, estilo "prova de escola".
+// Marca d'água: UMA faixa diagonal discreta por página.
+// Texto de apoio: barra fininha à esquerda + fonte pequena recuada à direita.
+// Texto justificado. Layout em 1 ou 2 colunas.
 // Requer:  npm install jspdf
 
 import { jsPDF } from "jspdf";
 import type { QuestaoSorteada } from "@/lib/sorteio";
 
 export type CampoCabecalho = { on: boolean; valor: string };
-
 export type Cabecalho = {
   disciplina: boolean;
   escola: CampoCabecalho;
@@ -17,9 +16,8 @@ export type Cabecalho = {
   aluno: CampoCabecalho;
   data: CampoCabecalho;
 };
-
 export type DadosPDF = {
-  etapa: string; // usado só no número de série, NÃO é impresso no cabeçalho
+  etapa: string; // usado só no nº de série; NÃO é impresso
   formato: "prosa" | "colunas";
   cabecalho: Cabecalho;
   questoes: QuestaoSorteada[];
@@ -34,8 +32,7 @@ export function gerarNumeroSerie(etapa: string): string {
     String(h.getDate()).padStart(2, "0");
   const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
   let rnd = "";
-  for (let i = 0; i < 6; i++)
-    rnd += chars[Math.floor(Math.random() * chars.length)];
+  for (let i = 0; i < 6; i++) rnd += chars[Math.floor(Math.random() * chars.length)];
   return `BQPD-${sigla}-${data}-${rnd}`;
 }
 
@@ -43,43 +40,38 @@ export function gerarPDF(dados: DadosPDF): string {
   const doc = new jsPDF({ unit: "pt", format: "a4" });
   doc.setLineHeightFactor(1.35);
   const serie = gerarNumeroSerie(dados.etapa);
-  const M = 46;
+  const M = 48;
   const W = doc.internal.pageSize.getWidth();
   const H = doc.internal.pageSize.getHeight();
-  const RODAPE = 42;
+  const RODAPE = 40;
   const colunas = dados.formato === "colunas" ? 2 : 1;
-  const gap = 26;
+  const gap = 28;
   const colW = (W - M * 2 - gap * (colunas - 1)) / colunas;
   const colX = (i: number) => M + i * (colW + gap);
-  const lh = (size: number) => size * 1.35;
-  const nLinhas = (texto: string, largura: number) =>
-    (doc.splitTextToSize(texto, largura) as string[]).length;
+  const lh = (s: number) => s * 1.35;
+  const nLin = (t: string, w: number) => (doc.splitTextToSize(t, w) as string[]).length;
 
-  // ---------- MARCA D'ÁGUA (antes do conteúdo = fica atrás) ----------
+  // UMA faixa diagonal discreta no centro da página.
   const marcaDagua = () => {
-    doc.setTextColor(242, 243, 248);
-    doc.setFont("helvetica", "bold").setFontSize(40);
-    for (let yy = 130; yy < H; yy += 178) {
-      for (let xx = -10; xx < W; xx += 215) {
-        doc.text("BQPD", xx, yy, { angle: 32 });
-      }
-    }
+    doc.saveGraphicsState();
+    doc.setTextColor(238, 239, 245);
+    doc.setFont("helvetica", "bold").setFontSize(80);
+    doc.text("BQPD", W / 2, H / 2, { align: "center", angle: 28, baseline: "middle" });
+    doc.restoreGraphicsState();
   };
   marcaDagua();
 
-  // ---------- CABEÇALHO (só na 1ª página, largura total) ----------
+  // ---------- CABEÇALHO (só na 1ª página) ----------
   let y = M;
-  doc.setFillColor(30, 39, 102);
-  doc.rect(0, 0, W, 8, "F");
-  const titulo =
-    "Simulado" + (dados.cabecalho.disciplina ? " — Língua Portuguesa" : "");
-  doc.setFont("helvetica", "bold").setFontSize(16).setTextColor(30, 39, 102);
-  doc.text(titulo, M, y + 16);
-  y += 30;
+  const titulo = "Simulado" + (dados.cabecalho.disciplina ? " — Língua Portuguesa" : "");
+  doc.setFont("helvetica", "bold").setFontSize(15).setTextColor(30, 39, 102);
+  doc.text(titulo, M, y + 4);
+  y += 12;
+  doc.setDrawColor(30, 39, 102).setLineWidth(1.4).line(M, y, W - M, y);
+  y += 16;
 
-  // caixa de identificação (só se houver algum campo ligado)
-  const linhaCampo = (rotulo: string, c: CampoCabecalho) =>
-    c.valor.trim() ? `${rotulo}: ${c.valor.trim()}` : `${rotulo}: ______________________`;
+  const linhaCampo = (rot: string, c: CampoCabecalho) =>
+    c.valor.trim() ? `${rot}: ${c.valor.trim()}` : `${rot}: ______________________`;
   const l1: string[] = [];
   if (dados.cabecalho.escola.on) l1.push(linhaCampo("Escola", dados.cabecalho.escola));
   if (dados.cabecalho.turma.on) l1.push(linhaCampo("Turma", dados.cabecalho.turma));
@@ -87,138 +79,120 @@ export function gerarPDF(dados: DadosPDF): string {
   if (dados.cabecalho.aluno.on) l2.push(linhaCampo("Aluno(a)", dados.cabecalho.aluno));
   if (dados.cabecalho.data.on)
     l2.push(`Data: ${dados.cabecalho.data.valor.trim() || "___/___/____"}`);
-
-  if (l1.length || l2.length) {
-    const linhas = [l1, l2].filter((l) => l.length);
-    const boxH = linhas.length * 20 + 12;
-    doc.setDrawColor(214).setFillColor(248, 249, 252);
-    doc.roundedRect(M, y, W - M * 2, boxH, 6, 6, "FD");
-    doc.setFont("helvetica", "normal").setFontSize(10).setTextColor(60);
-    let ly = y + 20;
-    for (const linha of linhas) {
-      doc.text(linha[0], M + 14, ly);
-      if (linha[1]) doc.text(linha[1], W - M - 14, ly, { align: "right" });
-      ly += 20;
+  const linhas = [l1, l2].filter((l) => l.length);
+  if (linhas.length) {
+    const boxH = linhas.length * 19 + 12;
+    doc.setDrawColor(220).setLineWidth(0.5).setFillColor(249, 250, 252);
+    doc.roundedRect(M, y, W - M * 2, boxH, 5, 5, "FD");
+    doc.setFont("helvetica", "normal").setFontSize(9.5).setTextColor(70);
+    let ly = y + 19;
+    for (const l of linhas) {
+      doc.text(l[0], M + 12, ly);
+      if (l[1]) doc.text(l[1], W - M - 12, ly, { align: "right" });
+      ly += 19;
     }
-    y += boxH + 14;
-  } else {
-    y += 6;
-  }
+    y += boxH + 16;
+  } else y += 4;
 
-  const topoConteudo = y;
-  const topoResto = M + 12;
-  const alturaColuna = H - RODAPE - topoResto;
+  const topo1 = y;
+  const topoN = M + 14;
+  const alturaColuna = H - RODAPE - topoN;
   let col = 0;
 
-  const novaColunaOuPagina = () => {
+  const novaColOuPag = () => {
     if (col < colunas - 1) {
       col++;
-      y = topoConteudo;
+      y = topo1;
     } else {
       doc.addPage();
       marcaDagua();
       col = 0;
-      y = topoResto;
+      y = topoN;
     }
   };
-  const cabe = (altura: number) => y + altura <= H - RODAPE;
+  const cabe = (h: number) => y + h <= H - RODAPE;
 
-  // desenha um parágrafo justificado (última linha não estica)
-  const paragrafo = (
+  // parágrafo justificado (última linha não estica)
+  const par = (
     texto: string,
     size: number,
     estilo: "normal" | "bold" | "italic",
     cor: [number, number, number],
     indent = 0
   ) => {
-    const largura = colW - indent;
-    const linhas = doc.splitTextToSize(texto, largura) as string[];
+    const w = colW - indent;
+    const ls = doc.splitTextToSize(texto, w) as string[];
     doc.setFont("helvetica", estilo).setFontSize(size).setTextColor(...cor);
-    const x = colX(col) + indent;
-    linhas.forEach((linha, i) => {
-      if (!cabe(lh(size))) novaColunaOuPagina();
-      const ultima = i === linhas.length - 1;
-      if (ultima) doc.text(linha, colX(col) + indent, y);
-      else doc.text(linha, colX(col) + indent, y, { align: "justify", maxWidth: largura });
+    ls.forEach((linha, i) => {
+      if (!cabe(lh(size))) novaColOuPag();
+      const x = colX(col) + indent;
+      if (i === ls.length - 1) doc.text(linha, x, y);
+      else doc.text(linha, x, y, { align: "justify", maxWidth: w });
       y += lh(size);
     });
   };
 
   // ---------- QUESTÕES ----------
-  const SUP = 9.5, ENUN = 10.5, ALT = 10, FONTE = 8;
+  const SUP = 9.5, ENUN = 10.5, ALT = 10, FT = 8;
   dados.questoes.forEach((q, i) => {
-    // altura estimada do bloco inteiro (texto + fonte + enunciado + alternativas)
-    let alturaBloco = 0;
-    if (q.texto_base) {
-      alturaBloco += nLinhas(q.texto_base, colW - 12) * lh(SUP) + 6;
-      alturaBloco += lh(FONTE) + 4;
-    }
-    alturaBloco += nLinhas(`${i + 1}) ${q.enunciado}`, colW) * lh(ENUN) + 3;
-    for (const op of q.alternativas)
-      alturaBloco += nLinhas(op, colW - 18) * lh(ALT);
-    // mantém o bloco junto se couber numa coluna inteira
-    const cabeInteiro = alturaBloco <= alturaColuna;
-    if (cabeInteiro && !cabe(alturaBloco)) novaColunaOuPagina();
+    // estima a altura do bloco para tentar mantê-lo junto
+    let alt = 0;
+    if (q.texto_base) alt += nLin(q.texto_base, colW - 12) * lh(SUP) + 4;
+    if (q.fonte_texto_base) alt += nLin(q.fonte_texto_base, colW - 12) * lh(FT) + 4;
+    alt += nLin(`${i + 1}) ${q.enunciado}`, colW) * lh(ENUN) + 2;
+    for (const op of q.alternativas) alt += nLin(op, colW - 18) * lh(ALT);
+    if (alt <= alturaColuna && !cabe(alt)) novaColOuPag();
 
-    // ----- TEXTO-BASE com barra lateral (agrupa visualmente) -----
+    // texto de apoio com barra lateral
     if (q.texto_base) {
-      const linhasSup = doc.splitTextToSize(q.texto_base, colW - 12) as string[];
-      const barTop = y - SUP * 0.8;
-      const xTexto = colX(col) + 12;
+      const ls = doc.splitTextToSize(q.texto_base, colW - 12) as string[];
+      const topo = y - SUP * 0.8;
       doc.setFont("helvetica", "italic").setFontSize(SUP).setTextColor(70, 70, 70);
-      linhasSup.forEach((linha, k) => {
-        if (!cabe(lh(SUP))) novaColunaOuPagina();
-        const ultima = k === linhasSup.length - 1;
-        if (ultima) doc.text(linha, xTexto, y);
-        else doc.text(linha, xTexto, y, { align: "justify", maxWidth: colW - 12 });
+      ls.forEach((linha, k) => {
+        if (!cabe(lh(SUP))) novaColOuPag();
+        const x = colX(col) + 12;
+        if (k === ls.length - 1) doc.text(linha, x, y);
+        else doc.text(linha, x, y, { align: "justify", maxWidth: colW - 12 });
         y += lh(SUP);
       });
-      // barra vertical à esquerda do texto
       doc.setDrawColor(150, 160, 200).setLineWidth(2);
-      doc.line(colX(col) + 2, barTop, colX(col) + 2, y - lh(SUP) + SUP * 0.4);
-      doc.setLineWidth(0.2);
-      // fonte: menor e recuada à direita, logo abaixo do texto
+      doc.line(colX(col) + 2, topo, colX(col) + 2, y - lh(SUP) + SUP * 0.4);
+      doc.setLineWidth(0.5);
       if (q.fonte_texto_base) {
-        y += 2;
-        doc.setFont("helvetica", "italic").setFontSize(FONTE).setTextColor(120, 120, 120);
+        doc.setFont("helvetica", "italic").setFontSize(FT).setTextColor(140, 140, 140);
         const lf = doc.splitTextToSize(q.fonte_texto_base, colW - 12) as string[];
         for (const linha of lf) {
-          if (!cabe(lh(FONTE))) novaColunaOuPagina();
+          if (!cabe(lh(FT))) novaColOuPag();
           doc.text(linha, colX(col) + colW, y, { align: "right" });
-          y += lh(FONTE);
+          y += lh(FT);
         }
       }
-      y += 5; // pequeno respiro entre texto e enunciado (ficam juntos)
+      y += 6;
     }
 
-    // ----- ENUNCIADO -----
-    paragrafo(`${i + 1}) ${q.enunciado}`, ENUN, "bold", [25, 25, 25]);
+    par(`${i + 1}) ${q.enunciado}`, ENUN, "bold", [25, 25, 25]);
     y += 2;
-    // ----- ALTERNATIVAS -----
-    q.alternativas.forEach((op, k) => {
-      paragrafo(`${"ABCDE"[k]}) ${op}`, ALT, "normal", [45, 45, 45], 18);
-    });
+    q.alternativas.forEach((op, k) =>
+      par(`${"ABCDE"[k]}) ${op}`, ALT, "normal", [45, 45, 45], 18)
+    );
 
-    // ----- separador entre questões (respiro maior + filete) -----
-    y += 10;
+    y += 9;
     if (cabe(1)) {
-      doc.setDrawColor(228).setLineWidth(0.5);
+      doc.setDrawColor(230).setLineWidth(0.5);
       doc.line(colX(col), y, colX(col) + colW, y);
     }
-    y += 12;
+    y += 13;
   });
 
-  // ---------- GABARITO (nova página) ----------
+  // ---------- GABARITO ----------
   doc.addPage();
   marcaDagua();
   y = M;
-  doc.setFillColor(30, 39, 102);
-  doc.rect(0, 0, W, 8, "F");
-  doc.setFont("helvetica", "bold").setFontSize(15).setTextColor(30, 39, 102);
-  doc.text("Gabarito", M, y + 16);
-  y += 34;
-  doc.setDrawColor(210).setLineWidth(0.5).line(M, y, W - M, y);
-  y += 22;
+  doc.setFont("helvetica", "bold").setFontSize(14).setTextColor(30, 39, 102);
+  doc.text("Gabarito", M, y + 4);
+  y += 12;
+  doc.setDrawColor(30, 39, 102).setLineWidth(1.4).line(M, y, W - M, y);
+  y += 24;
   const cg = 5;
   const wg = (W - M * 2) / cg;
   dados.questoes.forEach((q, i) => {
@@ -230,7 +204,7 @@ export function gerarPDF(dados: DadosPDF): string {
     doc.text(`${"ABCDE"[q.gabaritoIndex]}`, gx + 26, gy);
   });
 
-  // ---------- RODAPÉ (todas as páginas) ----------
+  // ---------- RODAPÉ ----------
   const total = doc.getNumberOfPages();
   for (let p = 1; p <= total; p++) {
     doc.setPage(p);
