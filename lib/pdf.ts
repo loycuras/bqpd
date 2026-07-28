@@ -225,20 +225,15 @@ export function gerarPDF(dados: DadosPDF): string {
     }
   };
 
-  const simples = (texto: string, size: number, cor: [number, number, number], indent: number) => {
-    doc.setFont(F, "normal").setFontSize(size).setTextColor(...cor);
-    const ls = doc.splitTextToSize(texto, colW - indent) as string[];
-    for (const l of ls) {
-      if (!cabe(lh(size))) novaColOuPag();
-      doc.text(l, colX(col) + indent, y);
-      y += lh(size);
-    }
-  };
-
   // ---------------- QUESTÕES ----------------
   const SUP = 9.5, ENUN = 10.5, ALT = 10, FT = 8;
   dados.questoes.forEach((q, i) => {
     if (q.texto_base) {
+      // comando de leitura — funciona como divisória "aqui começa um texto"
+      if (!cabe(lh(8.5) + 6)) novaColOuPag();
+      doc.setFont(F, "bold").setFontSize(8.5).setTextColor(...TEAL);
+      doc.text("Leia o texto para responder à questão.", colX(col), y);
+      y += lh(8.5) + 4;
       const blocos = q.texto_base.split("\n\n");
       blocos.forEach((b, k) => {
         if (b.includes("\n")) verso(b, SUP, [55, 60, 58], 14, true);
@@ -259,7 +254,9 @@ export function gerarPDF(dados: DadosPDF): string {
 
     prosa(`${i + 1}) ${q.enunciado}`, ENUN, "bold", TEXTO, {});
     y += 2;
-    q.alternativas.forEach((op, k) => simples(`${"ABCDE"[k]}) ${op}`, ALT, [50, 55, 53], 16));
+    q.alternativas.forEach((op, k) =>
+      prosa(`${"ABCDE"[k]}) ${op}`, ALT, "normal", [50, 55, 53], { indent: 16 })
+    );
 
     y += 6;
     if (cabe(1)) {
