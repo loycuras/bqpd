@@ -101,23 +101,13 @@ export function selecionarQuestoes(
   return escolhidas;
 }
 
-// Gera posições-alvo (0..4) equilibradas para o gabarito.
-function alvosEquilibrados(n: number): number[] {
-  const alvos: number[] = [];
-  while (alvos.length < n) alvos.push(...embaralhar([0, 1, 2, 3, 4]));
-  return embaralhar(alvos.slice(0, n));
-}
-
-// Embaralha as alternativas colocando a correta na posição-alvo.
+// Embaralha as alternativas de cada questão de forma independente e aleatória.
+// Sem posições-alvo fixas: cada questão sorteia sua própria ordem, então o
+// gabarito não segue nenhum padrão previsível.
 export function prepararSimulado(questoes: Questao[]): QuestaoSorteada[] {
-  const alvos = alvosEquilibrados(questoes.length);
-  return questoes.map((q, i) => {
+  return questoes.map((q) => {
     const correta = q.alternativas[q.gabarito_index];
-    const outras = embaralhar(
-      q.alternativas.filter((_, j) => j !== q.gabarito_index)
-    );
-    const alvo = Math.min(alvos[i], q.alternativas.length - 1);
-    const novas = [...outras.slice(0, alvo), correta, ...outras.slice(alvo)];
+    const novas = embaralhar(q.alternativas);
     return {
       descritor: q.descritor,
       descritor_desc: q.descritor_desc,
