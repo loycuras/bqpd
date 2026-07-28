@@ -1,39 +1,34 @@
 // lib/pdf.ts
-// PDF do simulado — paleta B (verde-petróleo + coral), estilo prova.
-// Correções desta versão:
-//  - justificação manual COM recuo na 1ª linha do parágrafo;
-//  - fluxo enxuto nas colunas (acabam os grandes vazios);
-//  - barra lateral do texto acompanha a quebra de coluna;
-//  - opção de listar os descritores no cabeçalho;
-//  - cabeçalho redesenhado na paleta fresca.
-// Fonte: por enquanto Helvetica (a Lato será embutida no próximo passo).
-// Requer:  npm install jspdf
+// PDF do simulado — paleta B, fonte Lato embutida, marca d'água transparente,
+// motor de layout em colunas que preenche de verdade (sem vazios).
+// Requer:  npm install jspdf   +   o arquivo lib/lato-font.ts
 
 import { jsPDF } from "jspdf";
 import type { QuestaoSorteada } from "@/lib/sorteio";
+import { registrarLato } from "@/lib/lato-font";
 
 export type CampoCabecalho = { on: boolean; valor: string };
 export type Cabecalho = {
   disciplina: boolean;
-  descritores: boolean; // listar os descritores do simulado no topo
+  descritores: boolean;
   escola: CampoCabecalho;
   turma: CampoCabecalho;
   aluno: CampoCabecalho;
   data: CampoCabecalho;
 };
 export type DadosPDF = {
-  etapa: string; // só no nº de série; não é impresso
+  etapa: string;
   formato: "prosa" | "colunas";
   cabecalho: Cabecalho;
   questoes: QuestaoSorteada[];
 };
 
-// Paleta B
 const TEAL: [number, number, number] = [15, 118, 110];
 const CORAL: [number, number, number] = [242, 118, 94];
 const TEXTO: [number, number, number] = [18, 33, 31];
 const SUAVE: [number, number, number] = [110, 125, 122];
 const BARRA: [number, number, number] = [150, 190, 183];
+const F = "Lato";
 
 export function gerarNumeroSerie(etapa: string): string {
   const sigla = etapa.replace(/[^0-9A-Za-z]/g, "").toUpperCase().slice(0, 3);
@@ -50,6 +45,7 @@ export function gerarNumeroSerie(etapa: string): string {
 
 export function gerarPDF(dados: DadosPDF): string {
   const doc = new jsPDF({ unit: "pt", format: "a4" });
+  registrarLato(doc);
   doc.setLineHeightFactor(1.32);
   const serie = gerarNumeroSerie(dados.etapa);
   const M = 48;
@@ -62,26 +58,37 @@ export function gerarPDF(dados: DadosPDF): string {
   const colX = (i: number) => M + i * (colW + gap);
   const lh = (s: number) => s * 1.32;
 
+  // ---- marca d'água: opacidade REAL via GState (técnica confiável) ----
   const marca = () => {
-    doc.setTextColor(235, 242, 240);
-    doc.setFont("helvetica", "bold").setFontSize(76);
-    doc.text("BQPD", W / 2, H / 2, { align: "center", angle: 28, baseline: "middle" });
+    const g = doc as unknown as {
+      saveGraphicsState: () => void;
+      restoreGraphicsState: () => void;
+      setGState: (s: unknown) => void;
+      GState: new (o: { opacity: number }) => unknown;
+    };
+    g.saveGraphicsState();
+    g.setGState(new g.GState({ opacity: 0.05 }));
+    doc.setFont(F, "bold").setFontSize(26).setTextColor(...TEAL);
+    for (let yy = 96; yy < H; yy += 118) {
+      for (let xx = 24; xx < W; xx += 150) {
+        doc.text("BQPD", xx, yy, { angle: 20 });
+      }
+    }
+    g.restoreGraphicsState();
   };
   marca();
 
   // ---------------- CABEÇALHO (1ª página) ----------------
   let y = M;
   doc.setFillColor(...TEAL);
-  doc.rect(0, 0, W, 6, "F"); // fio superior da marca
+  doc.rect(0, 0, W, 6, "F");
   const titulo = "Simulado" + (dados.cabecalho.disciplina ? " · Língua Portuguesa" : "");
-  doc.setFont("helvetica", "bold").setFontSize(16).setTextColor(...TEAL);
+  doc.setFont(F, "bold").setFontSize(16).setTextColor(...TEAL);
   doc.text(titulo, M, y + 6);
-  // acento coral curto sob o título
   doc.setDrawColor(...CORAL).setLineWidth(2.2);
   doc.line(M, y + 13, M + 46, y + 13);
   y += 26;
 
-  // caixa de identificação
   const campo = (rot: string, c: CampoCabecalho) =>
     c.valor.trim() ? `${rot}: ${c.valor.trim()}` : `${rot}: ______________________`;
   const l1: string[] = [];
@@ -93,18 +100,15 @@ export function gerarPDF(dados: DadosPDF): string {
     l2.push(`Data: ${dados.cabecalho.data.valor.trim() || "___/___/____"}`);
   const linhas = [l1, l2].filter((l) => l.length);
 
-  // descritores do simulado (se marcado)
   const descs = [...new Map(dados.questoes.map((q) => [q.descritor, q.descritor_desc])).entries()].sort(
     (a, b) => a[0].localeCompare(b[0])
   );
-  const descTexto = dados.cabecalho.descritores
-    ? "Descritores: " + descs.map(([c]) => c).join(", ")
-    : "";
+  const descTexto = dados.cabecalho.descritores ? "Descritores: " + descs.map(([c]) => c).join(", ") : "";
 
   if (linhas.length || descTexto) {
-    doc.setFont("helvetica", "normal").setFontSize(9.5);
-    let extra = 0;
+    doc.setFont(F, "normal").setFontSize(9.5);
     let descLinhas: string[] = [];
+    let extra = 0;
     if (descTexto) {
       descLinhas = doc.splitTextToSize(descTexto, W - M * 2 - 24) as string[];
       extra = descLinhas.length * 13 + 4;
@@ -120,36 +124,38 @@ export function gerarPDF(dados: DadosPDF): string {
       ly += 18;
     }
     if (descTexto) {
-      doc.setTextColor(...TEAL).setFont("helvetica", "bold");
+      doc.setTextColor(...TEAL).setFont(F, "bold");
       doc.text(descLinhas, M + 12, ly + 2);
     }
     y += boxH + 16;
   } else y += 4;
 
-  const topo1 = y;
-  const topoN = M + 14;
+  // ---- motor de colunas: cada página tem seu próprio topo ----
+  const topoPrimeira = y; // abaixo do cabeçalho, na página 1
+  const topoOutras = M + 14; // topo nas páginas seguintes
+  let topoAtual = topoPrimeira;
   let col = 0;
 
   const novaColOuPag = () => {
     if (col < colunas - 1) {
       col++;
-      y = topo1;
+      y = topoAtual; // topo da PÁGINA ATUAL (corrige o antigo vazio)
     } else {
       doc.addPage();
       marca();
+      topoAtual = topoOutras;
       col = 0;
-      y = topoN;
+      y = topoAtual;
     }
   };
   const cabe = (h: number) => y + h <= H - RODAPE;
 
-  // barra lateral do texto de apoio, por linha (acompanha quebra de coluna)
   const barraLinha = (size: number) => {
     doc.setDrawColor(...BARRA).setLineWidth(2);
     doc.line(colX(col) + 3, y - size * 0.82, colX(col) + 3, y + size * 0.22);
   };
 
-  // parágrafo de PROSA justificado, com recuo opcional na 1ª linha + barra opcional
+  // PROSA justificada (manual), com recuo na 1ª linha + barra opcional
   const prosa = (
     texto: string,
     size: number,
@@ -159,9 +165,8 @@ export function gerarPDF(dados: DadosPDF): string {
   ) => {
     const indent = opt.indent || 0;
     const recuo = opt.recuo || 0;
-    doc.setFont("helvetica", estilo).setFontSize(size).setTextColor(...cor);
+    doc.setFont(F, estilo).setFontSize(size).setTextColor(...cor);
     const espaco = doc.getTextWidth(" ");
-    const xBase = colX(col) + indent;
     const larguraTotal = colW - indent;
     const palavras = texto.split(/\s+/).filter(Boolean);
     let linha: string[] = [];
@@ -206,9 +211,9 @@ export function gerarPDF(dados: DadosPDF): string {
     if (linha.length) desenha(true);
   };
 
-  // VERSO: preserva as linhas (sem justificar), com barra opcional
+  // VERSO: preserva as linhas (sem justificar)
   const verso = (texto: string, size: number, cor: [number, number, number], indent: number, barra: boolean) => {
-    doc.setFont("helvetica", "normal").setFontSize(size).setTextColor(...cor);
+    doc.setFont(F, "normal").setFontSize(size).setTextColor(...cor);
     for (const bruta of texto.split("\n")) {
       const ls = doc.splitTextToSize(bruta, colW - indent) as string[];
       for (const l of ls) {
@@ -220,9 +225,8 @@ export function gerarPDF(dados: DadosPDF): string {
     }
   };
 
-  // texto simples à esquerda (alternativas)
   const simples = (texto: string, size: number, cor: [number, number, number], indent: number) => {
-    doc.setFont("helvetica", "normal").setFontSize(size).setTextColor(...cor);
+    doc.setFont(F, "normal").setFontSize(size).setTextColor(...cor);
     const ls = doc.splitTextToSize(texto, colW - indent) as string[];
     for (const l of ls) {
       if (!cabe(lh(size))) novaColOuPag();
@@ -242,7 +246,7 @@ export function gerarPDF(dados: DadosPDF): string {
         if (k < blocos.length - 1) y += 4;
       });
       if (q.fonte_texto_base) {
-        doc.setFont("helvetica", "normal").setFontSize(FT).setTextColor(...SUAVE);
+        doc.setFont(F, "normal").setFontSize(FT).setTextColor(...SUAVE);
         const lf = doc.splitTextToSize(q.fonte_texto_base, colW - 14) as string[];
         for (const l of lf) {
           if (!cabe(lh(FT))) novaColOuPag();
@@ -271,7 +275,7 @@ export function gerarPDF(dados: DadosPDF): string {
   y = M;
   doc.setFillColor(...TEAL);
   doc.rect(0, 0, W, 6, "F");
-  doc.setFont("helvetica", "bold").setFontSize(15).setTextColor(...TEAL);
+  doc.setFont(F, "bold").setFontSize(15).setTextColor(...TEAL);
   doc.text("Gabarito", M, y + 6);
   doc.setDrawColor(...CORAL).setLineWidth(2.2);
   doc.line(M, y + 13, M + 46, y + 13);
@@ -281,10 +285,10 @@ export function gerarPDF(dados: DadosPDF): string {
   dados.questoes.forEach((q, i) => {
     const c = i % cg, r = Math.floor(i / cg);
     const gx = M + c * wg, gy = y + r * 24;
-    doc.setFont("courier", "bold").setFontSize(11).setTextColor(...TEAL);
+    doc.setFont(F, "bold").setFontSize(11).setTextColor(...TEAL);
     doc.text(`${String(i + 1).padStart(2, "0")}.`, gx, gy);
-    doc.setFont("helvetica", "bold").setTextColor(...TEXTO);
-    doc.text(`${"ABCDE"[q.gabaritoIndex]}`, gx + 26, gy);
+    doc.setTextColor(...TEXTO);
+    doc.text(`${"ABCDE"[q.gabaritoIndex]}`, gx + 24, gy);
   });
 
   // ---------------- RODAPÉ ----------------
