@@ -32,6 +32,7 @@ export default function GerarPage() {
 
   const [cab, setCab] = useState<Cabecalho>({
     disciplina: true,
+    descritores: false,
     escola: { on: true, valor: "" },
     turma: { on: true, valor: "" },
     aluno: { on: true, valor: "" },
@@ -280,6 +281,22 @@ export default function GerarPage() {
                 </button>
                 <span className="w-20 text-sm text-slate-700">Disciplina</span>
                 <span className="text-sm text-slate-400">Língua Portuguesa</span>
+              </div>
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() =>
+                    setCab({ ...cab, descritores: !cab.descritores })
+                  }
+                  className={`grid h-5 w-5 place-items-center rounded border ${
+                    cab.descritores
+                      ? "border-indigo-600 bg-indigo-600 text-white"
+                      : "border-slate-300"
+                  }`}
+                >
+                  {cab.descritores ? "✓" : ""}
+                </button>
+                <span className="w-20 text-sm text-slate-700">Descritores</span>
+                <span className="text-sm text-slate-400">Lista os descritores no topo</span>
               </div>
               <CampoCab chave="escola" nome="Escola" placeholder="Nome da escola (ou deixe em branco)" />
               <CampoCab chave="turma" nome="Turma" placeholder="Ex.: 3º A (ou deixe em branco)" />
